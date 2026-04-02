@@ -1,0 +1,513 @@
+---
+title: "Time Series Analysis of EU Electricity Consumption"
+output: html_document
+---
+
+```{r setup, include=FALSE,warning=FALSE,message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+load("data/electricity_EU27.RData")
+
+library(fpp2)
+library(ggplot2)
+library(forecast)
+library(dplyr)
+library(gridExtra)
+```
+
+## Introduction
+
+This project analyzes monthly electricity consumption data for selected EU countries and compares different time series forecasting models. It was originally developed as part of a course in Time Series Modeling and Forecasting and was later refined for portfolio purposes. The goal is to identify patterns such as trend and seasonality, and evaluate the performance of forecasting approaches in R.
+
+## Data
+
+The original dataset contains monthly electricity consumption data for EU countries.
+For this project, I focus on Spain, Ireland, and Sweden in order to compare different time series behaviors.
+
+
+```{r}
+# Filter rows for country and select for columns
+e<- data.tsb |> filter(geo=='ES') |> select(-geo)
+i<- data.tsb |> filter(geo=='IE') |> select(-geo)
+s<- data.tsb |> filter(geo=='SE') |> select(-geo)
+```
+
+
+```{r}
+# create the time series
+ES.ts<-ts(e$values,start = c(2008,1),frequency=12)
+IE.ts<-ts(i$values,start = c(2008,1),frequency=12)
+SE.ts<-ts(s$values,start = c(2008,1),frequency=12)
+```
+
+## Exploratory Analysis
+
+We start by visualizing the monthly time series in order to identify trend and seasonal patterns.
+
+```{r}
+p1 <- autoplot(ES.ts) +
+  xlab("Time") + ylab("Electricity consumption") +
+  ggtitle("Spain") + theme_classic()
+
+p2 <- autoplot(IE.ts) +
+  xlab("Time") + ylab("Electricity consumption") +
+  ggtitle("Ireland") + theme_classic()
+
+p3 <- autoplot(SE.ts) +
+  xlab("Time") + ylab("Electricity consumption") +
+  ggtitle("Sweden") + theme_classic()
+
+gridExtra::grid.arrange(p1, p2, p3, ncol = 1)
+```
+
+From the above graphs we can conclude that Spain shows a downward tendency over time as well as a clear seasonal pattern. Ireland shows a mostly upward movement over time, along with a visible seasonal pattern. Sweden shows a slight downward movement over time and clear seasonality, with repeated peaks and troughs across the years.
+
+## Seasonality plots
+
+Seasonality plots were constructed with the objective of observing the underlying seasonal pattern more clearly and identifying years in which the pattern changes.
+
+```{r}
+ggseasonplot(ES.ts) + ggtitle("Seasonal Plot - Spain")
+ggseasonplot(IE.ts) + ggtitle("Seasonal Plot - Ireland")
+ggseasonplot(SE.ts) + ggtitle("Seasonal Plot - Sweden")
+```
+
+For Spain, the highest consumption levels tend to occur in the winter months (December and January), and there is also an increase during summer, particularly in July.
+In Ireland, higher consumption is also mostly concentrated in colder months, while summer levels are comparatively lower.
+For Sweden, seasonality is especially pronounced, with high consumption in winter months and low consumption in summer.
+It is also possible to observe that electricity consumption levels tend to decrease over time in Spain and Sweden, while Ireland shows an overall increasing pattern.
+
+## Classical Decomposition
+
+In this section, both additive and multiplicative classical decompositions were considered for each series.
+
+
+```{r}
+ES.dec.add <- decompose(ES.ts)
+ES.dec.mul <- decompose(ES.ts, type = "multiplicative")
+
+IE.dec.add <- decompose(IE.ts)
+IE.dec.mul <- decompose(IE.ts, type = "multiplicative")
+
+SE.dec.add <- decompose(SE.ts)
+SE.dec.mul <- decompose(SE.ts, type = "multiplicative")
+```
+
+
+### Spain
+
+```{r}
+# Seasonal indices for both decompositions
+round(ES.dec.add$figure, 2)
+round(ES.dec.mul$figure, 2)
+```
+
+For Spain, the seasonal indices indicate that January is the month with the highest electricity consumption relative to the average, while April shows the lowest seasonal effect. According to the multiplicative decomposition, January is approximately 9% above the average level, whereas April is about 9% below it.
+
+### Ireland
+
+```{r}
+# Seasonal indices for both decompositions
+round(IE.dec.add$figure, 2)
+round(IE.dec.mul$figure, 2)
+```
+
+For Ireland, the seasonal indices show that January has the highest electricity consumption relative to the average, while June has the lowest seasonal effect. Under the multiplicative decomposition, January is approximately 12% above the average level, whereas June is about 10% below it.
+
+### Sweden
+
+```{r}
+# Seasonal indices for both decompositions
+round(SE.dec.add$figure, 2)
+round(SE.dec.mul$figure, 2)
+```
+
+For Sweden, the seasonal pattern is stronger than in the other selected countries. The seasonal indices show that January has the highest electricity consumption relative to the average, while July has the lowest seasonal effect.
+This confirms a strong contrast between winter and summer consumption levels. January is approximately 30% above the average level, whereas July is about 23% below it, highlighting the strong contrast between winter and summer consumption.
+
+
+## STL Decomposition
+
+STL decomposition was also applied, using different smoothing windows.
+
+```{r}
+ES.stl.periodic <- stl(ES.ts, s.window = "periodic",robust = TRUE)
+ES.stl.7 <- stl(ES.ts, s.window = 7,robust = TRUE)
+ES.stl.20 <- stl(ES.ts, s.window = 20,robust = TRUE)
+
+IE.stl.periodic <- stl(IE.ts, s.window = "periodic",robust = TRUE)
+IE.stl.7 <- stl(IE.ts, s.window = 7,robust = TRUE)
+IE.stl.20 <- stl(IE.ts, s.window = 20,robust = TRUE)
+
+SE.stl.periodic <- stl(SE.ts, s.window = "periodic",robust = TRUE)
+SE.stl.7 <- stl(SE.ts, s.window = 7,robust = TRUE)
+SE.stl.20 <- stl(SE.ts, s.window = 20,robust = TRUE)
+```
+
+## Decomposition Fit Comparison
+
+To compare decomposition approaches, the observed series and the fitted values obtained from the classical and STL-based methods were first plotted together. RMSE was then used as a quantitative measure of fit.
+
+```{r}
+# Classical
+ES.fit.add <- ES.dec.add$trend + ES.dec.add$seasonal
+ES.fit.mul <- ES.dec.mul$trend * ES.dec.mul$seasonal
+IE.fit.add <- IE.dec.add$trend + IE.dec.add$seasonal
+IE.fit.mul <- IE.dec.mul$trend * IE.dec.mul$seasonal
+SE.fit.add <- SE.dec.add$trend + SE.dec.add$seasonal
+SE.fit.mul <- SE.dec.mul$trend * SE.dec.mul$seasonal
+# STL
+ES.fit.stl.periodic <- ES.stl.periodic$time.series[, "trend"] + ES.stl.periodic$time.series[, "seasonal"]
+ES.fit.stl.7 <- ES.stl.7$time.series[, "trend"] + ES.stl.7$time.series[, "seasonal"]
+ES.fit.stl.20 <- ES.stl.20$time.series[, "trend"] + ES.stl.20$time.series[, "seasonal"]
+IE.fit.stl.periodic <- IE.stl.periodic$time.series[, "trend"] + IE.stl.periodic$time.series[, "seasonal"]
+IE.fit.stl.7 <- IE.stl.7$time.series[, "trend"] + IE.stl.7$time.series[, "seasonal"]
+IE.fit.stl.20 <- IE.stl.20$time.series[, "trend"] + IE.stl.20$time.series[, "seasonal"]
+SE.fit.stl.periodic <- SE.stl.periodic$time.series[, "trend"] + SE.stl.periodic$time.series[, "seasonal"]
+SE.fit.stl.7 <- SE.stl.7$time.series[, "trend"] + SE.stl.7$time.series[, "seasonal"]
+SE.fit.stl.20 <- SE.stl.20$time.series[, "trend"] + SE.stl.20$time.series[, "seasonal"]
+```
+
+
+```{r,warning=FALSE}
+autoplot(ES.ts,series='ES.Dados reais') +
+autolayer(ES.fit.add,series='ES.Aditivo') +
+autolayer(ES.fit.mul,series='ES.Multiplicativo') +
+autolayer(ES.fit.stl.periodic,series='ES.stl.periodic')+
+autolayer(ES.fit.stl.7,series='ES.stl.7')+
+autolayer(ES.fit.stl.20,series='ES.stl.20')
+```
+
+
+```{r,warning=FALSE}
+autoplot(IE.ts,series='IE.Dados reais') +
+autolayer(IE.fit.add,series='IE.Aditivo') +
+autolayer(IE.fit.mul,series='IE.Multiplicativo') +
+autolayer(IE.fit.stl.periodic,series='IE.stl.periodic')+
+autolayer(IE.fit.stl.7,series='IE.stl.7')+
+autolayer(IE.fit.stl.20,series='IE.stl.20')
+```
+
+
+
+```{r,warning=FALSE}
+autoplot(SE.ts,series='SE.Dados reais') +
+autolayer(SE.fit.add,series='SE.Aditivo') +
+autolayer(SE.fit.mul,series='SE.Multiplicativo') +
+autolayer(SE.fit.stl.periodic,series='SE.stl.periodic')+
+autolayer(SE.fit.stl.7,series='SE.stl.7')+
+autolayer(SE.fit.stl.20,series='SE.stl.20')
+```
+
+
+
+
+```{r,warning=FALSE}
+decomp_rmse_table <- data.frame(
+  Method = c("Classical Additive", "Classical Multiplicative", "STL Periodic", "STL 7", "STL 20"),
+  Spain = c(
+    accuracy(ES.fit.add, ES.ts)[,"RMSE"],
+    accuracy(ES.fit.mul, ES.ts)[,"RMSE"],
+    accuracy(ES.fit.stl.periodic, ES.ts)[,"RMSE"],
+    accuracy(ES.fit.stl.7, ES.ts)[,"RMSE"],
+    accuracy(ES.fit.stl.20, ES.ts)[,"RMSE"]
+  ),
+  Ireland = c(
+    accuracy(IE.fit.add, IE.ts)[,"RMSE"],
+    accuracy(IE.fit.mul, IE.ts)[,"RMSE"],
+    accuracy(IE.fit.stl.periodic, IE.ts)[,"RMSE"],
+    accuracy(IE.fit.stl.7, IE.ts)[,"RMSE"],
+    accuracy(IE.fit.stl.20, IE.ts)[,"RMSE"]
+  ),
+  Sweden = c(
+    accuracy(SE.fit.add, SE.ts)[,"RMSE"],
+    accuracy(SE.fit.mul, SE.ts)[,"RMSE"],
+    accuracy(SE.fit.stl.periodic, SE.ts)[,"RMSE"],
+    accuracy(SE.fit.stl.7, SE.ts)[,"RMSE"],
+    accuracy(SE.fit.stl.20, SE.ts)[,"RMSE"]
+  )
+)
+
+knitr::kable(decomp_rmse_table, digits = 1, caption = "RMSE comparison of decomposition methods")
+```
+
+At this exploratory stage, the RMSE values suggest that the additive classical decomposition provides the best fit for Spain and Ireland, while the multiplicative classical decomposition performs better for Sweden. A more formal comparison is carried out later using the training data.
+
+## Train/Test Split
+
+The available data for each country was separated in two portions, training and test data. This is done with the purpose of estimating any parameters of a forecasting method in the training data and using the test data to evaluate the forecast's accuracy.
+
+```{r}
+## Train/Test Split
+
+ES.train <- window(ES.ts, end = c(2022, 12))
+ES.test  <- window(ES.ts, start = c(2023, 1))
+
+IE.train <- window(IE.ts, end = c(2022, 12))
+IE.test  <- window(IE.ts, start = c(2023, 1))
+
+SE.train <- window(SE.ts, end = c(2022, 12))
+SE.test  <- window(SE.ts, start = c(2023, 1))
+```
+
+## Decomposition Comparison on Training Data and Best Overall Fit
+
+```{r}
+# Classical decomposition on training data
+ES.train.dec.add <- decompose(ES.train)
+ES.train.dec.mul <- decompose(ES.train, type = "multiplicative")
+
+IE.train.dec.add <- decompose(IE.train)
+IE.train.dec.mul <- decompose(IE.train, type = "multiplicative")
+
+SE.train.dec.add <- decompose(SE.train)
+SE.train.dec.mul <- decompose(SE.train, type = "multiplicative")
+
+# STL decomposition on training data
+ES.train.dec.stl.periodic <- stl(ES.train, robust = TRUE, s.window = "periodic")
+ES.train.dec.stl.7 <- stl(ES.train, robust = TRUE, s.window = 7)
+ES.train.dec.stl.15 <- stl(ES.train, robust = TRUE, s.window = 15)
+ES.train.dec.stl.20 <- stl(ES.train, robust = TRUE, s.window = 20)
+
+IE.train.dec.stl.periodic <- stl(IE.train, robust = TRUE, s.window = "periodic")
+IE.train.dec.stl.7 <- stl(IE.train, robust = TRUE, s.window = 7)
+IE.train.dec.stl.15 <- stl(IE.train, robust = TRUE, s.window = 15)
+IE.train.dec.stl.20 <- stl(IE.train, robust = TRUE, s.window = 20)
+
+SE.train.dec.stl.periodic <- stl(SE.train, robust = TRUE, s.window = "periodic")
+SE.train.dec.stl.7 <- stl(SE.train, robust = TRUE, s.window = 7)
+SE.train.dec.stl.15 <- stl(SE.train, robust = TRUE, s.window = 15)
+SE.train.dec.stl.20 <- stl(SE.train, robust = TRUE, s.window = 20)
+```
+
+```{r}
+# Fitted values - Spain
+fit.ES.train.dec.add <- ES.train.dec.add$seasonal + ES.train.dec.add$trend
+fit.ES.train.dec.mul <- ES.train.dec.mul$seasonal * ES.train.dec.mul$trend
+fit.ES.train.dec.stl.periodic <- ES.train.dec.stl.periodic$time.series[, "trend"] +
+  ES.train.dec.stl.periodic$time.series[, "seasonal"]
+fit.ES.train.dec.stl.7 <- ES.train.dec.stl.7$time.series[, "trend"] +
+  ES.train.dec.stl.7$time.series[, "seasonal"]
+fit.ES.train.dec.stl.15 <- ES.train.dec.stl.15$time.series[, "trend"] +
+  ES.train.dec.stl.15$time.series[, "seasonal"]
+fit.ES.train.dec.stl.20 <- ES.train.dec.stl.20$time.series[, "trend"] +
+  ES.train.dec.stl.20$time.series[, "seasonal"]
+
+# Fitted values - Ireland
+fit.IE.train.dec.add <- IE.train.dec.add$seasonal + IE.train.dec.add$trend
+fit.IE.train.dec.mul <- IE.train.dec.mul$seasonal * IE.train.dec.mul$trend
+fit.IE.train.dec.stl.periodic <- IE.train.dec.stl.periodic$time.series[, "trend"] +
+  IE.train.dec.stl.periodic$time.series[, "seasonal"]
+fit.IE.train.dec.stl.7 <- IE.train.dec.stl.7$time.series[, "trend"] +
+  IE.train.dec.stl.7$time.series[, "seasonal"]
+fit.IE.train.dec.stl.15 <- IE.train.dec.stl.15$time.series[, "trend"] +
+  IE.train.dec.stl.15$time.series[, "seasonal"]
+fit.IE.train.dec.stl.20 <- IE.train.dec.stl.20$time.series[, "trend"] +
+  IE.train.dec.stl.20$time.series[, "seasonal"]
+
+# Fitted values - Sweden
+fit.SE.train.dec.add <- SE.train.dec.add$seasonal + SE.train.dec.add$trend
+fit.SE.train.dec.mul <- SE.train.dec.mul$seasonal * SE.train.dec.mul$trend
+fit.SE.train.dec.stl.periodic <- SE.train.dec.stl.periodic$time.series[, "trend"] +
+  SE.train.dec.stl.periodic$time.series[, "seasonal"]
+fit.SE.train.dec.stl.7 <- SE.train.dec.stl.7$time.series[, "trend"] +
+  SE.train.dec.stl.7$time.series[, "seasonal"]
+fit.SE.train.dec.stl.15 <- SE.train.dec.stl.15$time.series[, "trend"] +
+  SE.train.dec.stl.15$time.series[, "seasonal"]
+fit.SE.train.dec.stl.20 <- SE.train.dec.stl.20$time.series[, "trend"] +
+  SE.train.dec.stl.20$time.series[, "seasonal"]
+```
+
+
+```{r,warning=FALSE}
+decomp_train_rmse_table <- data.frame(
+  Method = c("Classical Additive", "Classical Multiplicative", "STL Periodic", "STL 7", "STL 15", "STL 20"),
+  Spain = c(
+    accuracy(fit.ES.train.dec.add, ES.train)[, "RMSE"],
+    accuracy(fit.ES.train.dec.mul, ES.train)[, "RMSE"],
+    accuracy(fit.ES.train.dec.stl.periodic, ES.train)[, "RMSE"],
+    accuracy(fit.ES.train.dec.stl.7, ES.train)[, "RMSE"],
+    accuracy(fit.ES.train.dec.stl.15, ES.train)[, "RMSE"],
+    accuracy(fit.ES.train.dec.stl.20, ES.train)[, "RMSE"]
+  ),
+  Ireland = c(
+    accuracy(fit.IE.train.dec.add, IE.train)[, "RMSE"],
+    accuracy(fit.IE.train.dec.mul, IE.train)[, "RMSE"],
+    accuracy(fit.IE.train.dec.stl.periodic, IE.train)[, "RMSE"],
+    accuracy(fit.IE.train.dec.stl.7, IE.train)[, "RMSE"],
+    accuracy(fit.IE.train.dec.stl.15, IE.train)[, "RMSE"],
+    accuracy(fit.IE.train.dec.stl.20, IE.train)[, "RMSE"]
+  ),
+  Sweden = c(
+    accuracy(fit.SE.train.dec.add, SE.train)[, "RMSE"],
+    accuracy(fit.SE.train.dec.mul, SE.train)[, "RMSE"],
+    accuracy(fit.SE.train.dec.stl.periodic, SE.train)[, "RMSE"],
+    accuracy(fit.SE.train.dec.stl.7, SE.train)[, "RMSE"],
+    accuracy(fit.SE.train.dec.stl.15, SE.train)[, "RMSE"],
+    accuracy(fit.SE.train.dec.stl.20, SE.train)[, "RMSE"]
+  )
+)
+
+knitr::kable(
+  decomp_train_rmse_table,
+  digits = 1,
+  caption = "RMSE comparison of decomposition methods on the training data"
+)
+```
+
+
+According to the RMSE values on the training data, the additive classical decomposition provides the best classical fit for Spain and Ireland, while the multiplicative classical decomposition performs better for Sweden. Among the STL alternatives, the best-performing option is `s.window = 7` for all three countries. 
+
+
+## Forecasting Models
+
+After comparing decomposition methods on the training data, forecasting performance was evaluated separately using ETS and ARIMA models. A better in-sample decomposition fit does not necessarily imply better out-of-sample forecasting performance, therefore the final forecast comparison focuses on test-set accuracy.
+
+```{r}
+# ETS models
+ES.ets <- ets(ES.train, ic = "aic")
+IE.ets <- ets(IE.train, ic = "aic")
+SE.ets <- ets(SE.train, ic = "aic")
+
+# ARIMA models
+ES.auto <- auto.arima(ES.train, ic = "aic")
+IE.auto <- auto.arima(IE.train, ic = "aic")
+SE.auto <- auto.arima(SE.train, ic = "aic")
+```
+
+## Forecasts
+
+ETS and ARIMA models were both used to produce forecasts for the 2023 test period.
+
+```{r}
+ES_n_test <- length(ES.test)
+IE_n_test <- length(IE.test)
+SE_n_test <- length(SE.test)
+
+ES.prev.ets  <- forecast(ES.ets, h = ES_n_test)
+IE.prev.ets  <- forecast(IE.ets, h = IE_n_test)
+SE.prev.ets  <- forecast(SE.ets, h = SE_n_test)
+
+ES.prev.auto <- forecast(ES.auto, h = ES_n_test)
+IE.prev.auto <- forecast(IE.auto, h = IE_n_test)
+SE.prev.auto <- forecast(SE.auto, h = SE_n_test)
+```
+
+
+
+```{r, warning=FALSE}
+autoplot(ES.test, series = "Observed values") +
+  autolayer(ES.prev.auto$mean, series = "ARIMA forecast") +
+  autolayer(ES.prev.ets$mean, series = "ETS forecast") +
+  ggtitle("Spain: Forecast Comparison") +
+  xlab("Time") + ylab("Electricity consumption") +
+  theme_classic()
+```
+
+
+```{r, warning=FALSE}
+autoplot(IE.test, series = "Observed values") +
+  autolayer(IE.prev.auto$mean, series = "ARIMA forecast") +
+  autolayer(IE.prev.ets$mean, series = "ETS forecast") +
+  ggtitle("Ireland: Forecast Comparison") +
+  xlab("Time") + ylab("Electricity consumption") +
+  theme_classic()
+```
+
+
+```{r, warning=FALSE}
+autoplot(SE.test, series = "Observed values") +
+  autolayer(SE.prev.auto$mean, series = "ARIMA forecast") +
+  autolayer(SE.prev.ets$mean, series = "ETS forecast") +
+  ggtitle("Sweden: Forecast Comparison") +
+  xlab("Time") + ylab("Electricity consumption") +
+  theme_classic()
+```
+
+
+The graphs suggest that the ARIMA forecast is closer to the observed values in Spain, while the ETS forecast appears more competitive in Sweden. When it comes to Ireland, the graphical comparison alone is less conclusive, therefore forecast accuracy measures are more reliable.
+
+## Model Evaluation
+
+To check forecast accuracy, error measures RMSE, MAE and MAPE were used.
+
+```{r,warning=FALSE}
+forecast_eval_table <- data.frame(
+  Country = c("Spain", "Spain", "Ireland", "Ireland", "Sweden", "Sweden"),
+  Model = c("ETS", "ARIMA", "ETS", "ARIMA", "ETS", "ARIMA"),
+  RMSE = c(
+    accuracy(ES.prev.ets$mean, ES.test)[, "RMSE"],
+    accuracy(ES.prev.auto$mean, ES.test)[, "RMSE"],
+    accuracy(IE.prev.ets$mean, IE.test)[, "RMSE"],
+    accuracy(IE.prev.auto$mean, IE.test)[, "RMSE"],
+    accuracy(SE.prev.ets$mean, SE.test)[, "RMSE"],
+    accuracy(SE.prev.auto$mean, SE.test)[, "RMSE"]
+  ),
+  MAE = c(
+    accuracy(ES.prev.ets$mean, ES.test)[, "MAE"],
+    accuracy(ES.prev.auto$mean, ES.test)[, "MAE"],
+    accuracy(IE.prev.ets$mean, IE.test)[, "MAE"],
+    accuracy(IE.prev.auto$mean, IE.test)[, "MAE"],
+    accuracy(SE.prev.ets$mean, SE.test)[, "MAE"],
+    accuracy(SE.prev.auto$mean, SE.test)[, "MAE"]
+  ),
+  MAPE = c(
+    accuracy(ES.prev.ets$mean, ES.test)[, "MAPE"],
+    accuracy(ES.prev.auto$mean, ES.test)[, "MAPE"],
+    accuracy(IE.prev.ets$mean, IE.test)[, "MAPE"],
+    accuracy(IE.prev.auto$mean, IE.test)[, "MAPE"],
+    accuracy(SE.prev.ets$mean, SE.test)[, "MAPE"],
+    accuracy(SE.prev.auto$mean, SE.test)[, "MAPE"]
+  )
+)
+
+knitr::kable(
+  forecast_eval_table,
+  digits = 1,
+  caption = "Forecast accuracy comparison between ETS and ARIMA"
+)
+```
+
+The error measures corroborate the graphical conclusions made above for Spain and Sweden. The error measures also indicate that, for Ireland, the ARIMA model provides the best-performing forecast.
+
+## Residual diagnostics
+
+In order to assess the quality of the forecasts, the residuals were examined. A good forecasting model should produce residuals that behave like white noise. In the Ljung-Box test, the null hypothesis states that there is no autocorrelation in the residuals.
+
+```{r}
+best_model_ES <- ES.auto 
+checkresiduals(best_model_ES)
+```
+
+For Spain, ARIMA achieved the best forecast accuracy, but the Ljung–Box test suggests that the residuals are not fully consistent with white noise, since the null hypothesis is rejected at the 5% significance level. Therefore, the residuals of the ETS model were also assessed.
+
+```{r}
+checkresiduals(ES.ets)
+```
+
+The ETS alternative also fails the residual diagnostic test, so neither model provides fully satisfactory residual behavior.
+
+
+```{r}
+best_model_IE <- IE.auto  
+checkresiduals(best_model_IE)
+```
+
+For Ireland, the ARIMA model passes the residual diagnostic test, which supports the credibility of its forecasts.
+
+```{r}
+best_model_SE <- SE.ets    
+checkresiduals(best_model_SE)
+```
+
+For Sweden, although ETS may perform better in forecast accuracy measures, its residuals are not consistent with white noise. Therefore, the residuals of the ARIMA model were checked.
+
+```{r}   
+checkresiduals(SE.auto)
+```
+
+For Sweden, the ARIMA model provides residuals that are more consistent with white noise, which makes it a more credible forecasting option from a diagnostic perspective than the ETS.
+
+## Conclusion
+
+This project analyzed monthly electricity consumption in Spain, Ireland, and Sweden using time series techniques in R. All three countries exhibit clear seasonality, but differ in their long-term dynamics. Overall, the results highlight the importance of combining exploratory analysis, decomposition methods, forecast accuracy measures, and residual diagnostics when evaluating time series models.
